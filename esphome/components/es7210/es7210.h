@@ -28,6 +28,13 @@ class ES7210 final : public audio_adc::AudioAdc, public Component, public i2c::I
 
   void set_bits_per_sample(ES7210BitsPerSample bits_per_sample) { this->bits_per_sample_ = bits_per_sample; }
   bool set_mic_gain(float mic_gain) override;
+  bool set_digital_gain(float gain);
+  bool set_alc_enabled(bool enabled);
+  float digital_gain() const { return this->digital_gain_; }
+  bool alc_enabled() const { return this->alc_enabled_; }
+  void set_alc_max_gain(float gain) { this->alc_max_gain_ = gain; }
+  void set_alc_target(uint8_t target) { this->alc_target_ = target; }
+  void set_alc_ramp_rate(uint8_t rate) { this->alc_ramp_rate_ = rate; }
   void set_sample_rate(uint32_t sample_rate) { this->sample_rate_ = sample_rate; }
 
   float mic_gain() override { return this->mic_gain_; };
@@ -48,10 +55,17 @@ class ES7210 final : public audio_adc::AudioAdc, public Component, public i2c::I
   bool configure_i2s_format_();
   bool configure_mic_gain_();
   bool configure_sample_rate_();
+  bool configure_digital_gain_(float gain, bool alc_enabled);
+  bool update_digital_gain_(float gain, bool alc_enabled);
 
   bool setup_complete_{false};
   bool enable_tdm_{false};  // TDM is unsupported in ESPHome as of version 2024.12
   float mic_gain_{0};
+  float digital_gain_{0.0f};
+  float alc_max_gain_{12.0f};
+  uint8_t alc_target_{0xF7};  // -12 to -6 dBFS
+  uint8_t alc_ramp_rate_{6};
+  bool alc_enabled_{false};
   ES7210BitsPerSample bits_per_sample_{ES7210_BITS_PER_SAMPLE_16};
   uint32_t sample_rate_{0};
 };

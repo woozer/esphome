@@ -3,6 +3,11 @@ esphome:
     then:
       - audio_adc.set_mic_gain: 0db
       - audio_adc.set_mic_gain: !lambda 'return 4;'
+      - lambda: |-
+          id(es7210_adc).set_digital_gain(6.0f);
+          id(es7210_adc).set_alc_enabled(true);
+          id(es7210_adc).set_digital_gain(3.0f);
+          id(es7210_adc).set_alc_enabled(false);
 
 audio_adc:
   - platform: es7210
@@ -10,3 +15,10 @@ audio_adc:
     id: es7210_adc
     bits_per_sample: 16bit
     sample_rate: 16000
+    digital_gain: 0dB
+    alc:
+      enabled: false
+      max_gain: 12dB
+      min_level: -12dB
+      max_level: -6dB
+      ramp_rate: 6

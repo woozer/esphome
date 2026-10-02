@@ -3,6 +3,7 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 #include <cinttypes>
+#include <cmath>
 
 namespace esphome::es7210 {
 
@@ -29,6 +30,8 @@ void ES7210::dump_config() {
                 "  Bits Per Sample: %" PRIu8 "\n"
                 "  Sample Rate: %" PRIu32,
                 this->bits_per_sample_, this->sample_rate_);
+  ESP_LOGCONFIG(TAG, "  Digital Gain: %.1f dB\n  ALC: %s\n  ALC Maximum Gain: %.1f dB", this->digital_gain_,
+                ONOFF(this->alc_enabled_), this->alc_max_gain_);
 
   if (this->is_failed()) {
     ESP_LOGE(TAG, "  Failed to initialize");
@@ -66,6 +69,7 @@ void ES7210::setup() {
   ES7210_ERROR_FAILED(this->configure_i2s_format_());
   ES7210_ERROR_FAILED(this->configure_sample_rate_());
   ES7210_ERROR_FAILED(this->configure_mic_gain_());
+  ES7210_ERROR_FAILED(this->configure_digital_gain_(this->digital_gain_, this->alc_enabled_));
 
   // Power on mics 1 through 4
   ES7210_ERROR_FAILED(this->write_byte(ES7210_MIC1_POWER_REG47, 0x08));
@@ -91,6 +95,53 @@ bool ES7210::set_mic_gain(float mic_gain) {
   this->mic_gain_ = clamp<float>(mic_gain, ES7210_MIC_GAIN_MIN, ES7210_MIC_GAIN_MAX);
   if (this->setup_complete_) {
     return this->configure_mic_gain_();
+  }
+  return true;
+}
+
+bool ES7210::set_digital_gain(float gain) {
+  if (this->is_failed() || !std::isfinite(gain) || gain < -95.5f || gain > 32.0f)
+    return false;
+  gain = roundf(gain * 2.0f) / 2.0f;
+  // Preserve the manual value while ALC owns the gain registers.
+  if (this->alc_enabled_) {
+    this->digital_gain_ = gain;
+    return true;
+  }
+  return this->update_digital_gain_(gain, false);
+}
+
+bool ES7210::set_alc_enabled(bool enabled) { return this->update_digital_gain_(this->digital_gain_, enabled); }
+
+bool ES7210::update_digital_gain_(float gain, bool alc_enabled) {
+  if (this->is_failed())
+    return false;
+  if (this->setup_complete_ && !this->configure_digital_gain_(gain, alc_enabled)) {
+    // Keep the reported settings unchanged on an I2C error and try to restore the previous mode.
+    this->configure_digital_gain_(this->digital_gain_, this->alc_enabled_);
+    this->status_set_warning();
+    ESP_LOGW(TAG, "Failed to apply digital gain/ALC settings");
+    return false;
+  }
+  this->digital_gain_ = gain;
+  this->alc_enabled_ = alc_enabled;
+  this->status_clear_warning();
+  return true;
+}
+
+bool ES7210::configure_digital_gain_(float gain, bool alc_enabled) {
+  // ES7210 datasheet rev 21, registers 0x16-0x1E. ALC and fixed digital gain share registers.
+  ES7210_ERROR_CHECK(this->es7210_update_reg_bit_(ES7210_ALC_SELECT_REG16, 0x0F, 0x00));
+  const float active_gain = alc_enabled ? this->alc_max_gain_ : gain;
+  const auto gain_value = static_cast<uint8_t>(roundf((active_gain + 95.5f) * 2.0f));
+  for (uint8_t i = 0; i < 4; i++) {
+    ES7210_ERROR_CHECK(this->write_byte(ES7210_ADC4_GAIN_REG1B + i, gain_value));
+  }
+  if (alc_enabled) {
+    ES7210_ERROR_CHECK(this->es7210_update_reg_bit_(ES7210_ALC_RAMP_REG17, 0x0F, this->alc_ramp_rate_));
+    ES7210_ERROR_CHECK(this->write_byte(ES7210_ALC34_TARGET_REG18, this->alc_target_));
+    ES7210_ERROR_CHECK(this->write_byte(ES7210_ALC12_TARGET_REG19, this->alc_target_));
+    ES7210_ERROR_CHECK(this->es7210_update_reg_bit_(ES7210_ALC_SELECT_REG16, 0x0F, 0x0F));
   }
   return true;
 }

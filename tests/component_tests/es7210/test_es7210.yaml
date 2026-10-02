@@ -1,0 +1,22 @@
+esphome:
+  name: test-es7210
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+packages:
+  i2c: !include ../../test_build_components/common/i2c/esp32-idf.yaml
+
+audio_adc:
+  - platform: es7210
+    id: codec
+    i2c_id: i2c_bus
+    digital_gain: 6dB
+    alc:
+      enabled: true
+      max_gain: 12dB
+      min_level: -12dB
+      max_level: -6dB
+      ramp_rate: 6
